@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>빼빼로데이 페어틀 제작기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fff3ee;--ink:#4a2318;--card:#fff;--accent:#e4405f;--line:#f2c9bd;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Jua','Apple SD Gothic Neo','Malgun Gothic',sans-serif;line-height:1.5}
+main{max-width:920px;margin:0 auto;padding:28px 16px 48px;display:grid;gap:28px;grid-template-columns:minmax(0,480px) minmax(0,1fr);align-items:start}
+h1{grid-column:1/-1;margin:0;font-size:clamp(28px,5vw,40px);font-weight:400}
+.stage{box-shadow:0 6px 20px rgba(0,0,0,.18);line-height:0}
+canvas{display:block;width:100%;height:auto}
+.panel{display:grid;gap:18px}
+.drops{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.drop{position:relative;border:2px dashed var(--ink);border-radius:14px;background:var(--card);padding:14px 8px;text-align:center;cursor:pointer;min-height:92px;display:grid;place-items:center}
+.drop:focus-within{outline:3px solid var(--accent)}
+.drop.has{border-style:solid;background:#ffe3dc}
+.drop input{position:absolute;opacity:0;width:1px;height:1px}
+label.f{display:grid;gap:6px;font-size:15px}
+input[type=text]{font:inherit;padding:10px 12px;border:2px solid var(--ink);border-radius:10px;background:var(--card);color:var(--ink)}
+input[type=text]:focus{outline:3px solid var(--accent)}
+.themes{display:flex;gap:8px;flex-wrap:wrap}
+.themes button{font:inherit;border:2px solid var(--ink);border-radius:999px;padding:6px 14px;background:var(--card);color:var(--ink);cursor:pointer}
+.themes button[aria-pressed=true]{background:var(--ink);color:#fff}
+.go{font:inherit;font-size:20px;padding:14px;border:2px solid var(--ink);border-radius:14px;background:var(--accent);color:#fff;cursor:pointer;box-shadow:4px 4px 0 var(--ink)}
+.go:active{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--ink)}
+.go:disabled{opacity:.6;cursor:progress}
+#status{min-height:1.5em;font-size:15px}
+#result img{display:block;max-width:100%;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+#result a{color:var(--accent)}
+@media (max-width:760px){main{grid-template-columns:1fr}}
+@media (prefers-color-scheme:dark){:root{--bg:#2a1612;--ink:#ffe9e2;--card:#3a201a;--line:#5a3329}.themes button[aria-pressed=true]{color:#2a1612}.drop.has{background:#4d2b22}}
+</style>
+</head>
+<body>
+<main>
+<h1>빼빼로데이 페어틀 제작기</h1>
+
+<div class="stage"><canvas id="cv" width="508" height="568" aria-label="미리보기"></canvas></div>
+
+<div class="panel">
+  <div class="drops">
+    <label class="drop" id="d0">
+      <input type="file" accept="image/*" data-i="0">
+      <span>왼쪽 사진 고르기</span>
+    </label>
+    <label class="drop" id="d1">
+      <input type="file" accept="image/*" data-i="1">
+      <span>오른쪽 사진 고르기</span>
+    </label>
+  </div>
+
+  <label class="f">제목
+    <input type="text" id="ttl" value="11.11 Pepero Day" maxlength="24">
+  </label>
+
+  <label class="f">문구
+    <input type="text" id="cap" value="우리 빼빼로 나눠먹자" maxlength="20">
+  </label>
+
+  <div>
+    <div style="margin-bottom:6px;font-size:15px">빼빼로 종류</div>
+    <div class="themes" id="themes"></div>
+  </div>
+
+  <div>
+    <div style="margin-bottom:6px;font-size:15px">화질</div>
+    <div class="themes" id="quality"></div>
+  </div>
+
+  <button class="go" id="make">움짤 만들기</button>
+  <div id="status" role="status"></div>
+  <div id="result"></div>
+</div>
+</main>
+
+<script>
+(() => {
+const W = 480, H = 540, BD = 14, FRAMES = 32, DELAY = 5; // art size, white border, 5/100s per frame
+let SC = 2, PW = 0, PH = 0;                                // output scale / pixel size
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+const THEMES = {
+  '오리지널': { bg: '#ffd9d2', dot: '#ffbfb3', choc: '#6b3320', nut: '#f3d9a8', heart: '#e4405f', ink: '#4a2318' },
+  '딸기':     { bg: '#ffe4ee', dot: '#ffc2d6', choc: '#f0709b', nut: '#fff0f5', heart: '#d6336c', ink: '#7a1f42' },
+  '초코필드': { bg: '#fff0cf', dot: '#ffe0a0', nude: true, biscuit: '#f2d39b', toast: '#d9a55f', choc: '#3b1c10', heart: '#e4405f', ink: '#5a3a14' },
+  '말차':     { bg: '#e4f3d9', dot: '#c9e6b4', choc: '#6f9e4a', nut: '#f4ffe6', heart: '#e4405f', ink: '#2f4a1a' },
+  '쿠앤크':   { bg: '#e9eef6', dot: '#d0d8e6', choc: '#fbf6ee', nut: '#2b2b2b', heart: '#e4405f', ink: '#262626' }
+};
+let theme = THEMES['오리지널'];
+const imgs = [null, null], src = [null, null];
+const CREDIT = '@S2nxw_';
+
+// ---------- UI ----------
+const themesEl = document.getElementById('themes');
+Object.keys(THEMES).forEach((name, i) => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = name; b.setAttribute('aria-pressed', i === 0);
+  b.onclick = () => {
+    theme = THEMES[name];
+    [...themesEl.children].forEach(x => x.setAttribute('aria-pressed', x === b));
+  };
+  themesEl.appendChild(b);
+});
+
+const qEl = document.getElementById('quality');
+[['고화질 (2배)', 2], ['가볍게 (1배)', 1]].forEach(([name, k], i) => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = name; b.setAttribute('aria-pressed', i === 0);
+  b.onclick = () => {
+    if (rendering) return;
+    setScale(k);
+    [...qEl.children].forEach(x => x.setAttribute('aria-pressed', x === b));
+  };
+  qEl.appendChild(b);
+});
+
+document.querySelectorAll('.drop input').forEach(inp => {
+  inp.addEventListener('change', () => {
+    const f = inp.files[0]; if (!f) return;
+    const i = +inp.dataset.i, d = document.getElementById('d' + i);
+    const ok = im => {
+      src[i] = im; imgs[i] = prep(im);
+      d.classList.add('has');
+      d.querySelector('span').textContent = '✔ ' + f.name.slice(0, 14);
+      document.getElementById('status').textContent = '';
+    };
+    const fail = () => {
+      d.classList.remove('has');
+      d.querySelector('span').textContent = '다시 고르기';
+      document.getElementById('status').textContent =
+        '이 사진은 읽을 수 없어요. HEIC 형식이면 JPG나 PNG로 바꿔서 올려 주세요.';
+    };
+    const viaImg = () => {
+      const url = URL.createObjectURL(f), im = new Image();
+      im.onload = () => ok(im);
+      im.onerror = fail;
+      im.src = url;
+    };
+    if (window.createImageBitmap) {
+      createImageBitmap(f, { imageOrientation: 'from-image' }).then(ok).catch(viaImg);
+    } else viaImg();
+  });
+});
+const capEl = document.getElementById('cap'), ttlEl = document.getElementById('ttl');
+
+// ---------- drawing ----------
+function heart(x, y, s, color) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, 6);
+  ctx.bezierCurveTo(-14, -4, -8, -16, 0, -8);
+  ctx.bezierCurveTo(8, -16, 14, -4, 0, 6);
+  ctx.fill(); ctx.restore();
+}
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function photo(i, cx, cy, rot, sc) {
+  const S = 190, P = 10;
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(sc, sc);
+  ctx.shadowColor = 'rgba(0,0,0,.18)'; ctx.shadowBlur = 12 * SC; ctx.shadowOffsetY = 5 * SC;
+  ctx.fillStyle = '#fff'; rr(-S / 2, -S / 2, S, S, 22); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  const s = S - P * 2;
+  ctx.save(); rr(-s / 2, -s / 2, s, s, 14); ctx.clip();
+  const im = imgs[i];
+  if (im) {
+    const k = Math.max(s / im.width, s / im.height);
+    ctx.drawImage(im, -im.width * k / 2, -im.height * k / 2, im.width * k, im.height * k);
+  } else {
+    ctx.fillStyle = '#f1e2dc'; ctx.fillRect(-s / 2, -s / 2, s, s);
+    ctx.fillStyle = '#d8bdb3';
+    ctx.beginPath(); ctx.arc(0, -16, 26, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 56, 46, 34, 0, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+  ctx.restore();
+}
+function stick(bx, by, ang, mirror) {
+  const L = 190, Wd = 22, th = theme;
+  ctx.save(); ctx.translate(bx, by); ctx.rotate(mirror ? -ang : ang);
+  if (th.nude) {                                                                  // nude: slim biscuit, choco inside
+    const w = 15;
+    const g = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+    g.addColorStop(0, th.toast); g.addColorStop(0.35, th.biscuit); g.addColorStop(1, th.toast);
+    ctx.fillStyle = g; rr(-w / 2, -L, w, L, w / 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.35)'; rr(-w / 2 + 3, -L + 8, 2.5, L - 16, 1.2); ctx.fill();
+    ctx.fillStyle = th.toast;
+    for (let i = 0; i < 12; i++) {                                                // tiny baked specks
+      ctx.beginPath(); ctx.arc(((i * 7) % 5 - 2) * 2.2, -L + 20 + i * 14, 1, 0, 7); ctx.fill();
+    }
+    ctx.fillStyle = th.choc; ctx.beginPath(); ctx.ellipse(0, -L + 3.5, 4.2, 3, 0, 0, 7); ctx.fill();
+    ctx.restore(); return;
+  }
+  ctx.fillStyle = '#e9c98f'; rr(-Wd / 2 + 4, -L, Wd - 8, L, 5); ctx.fill();      // biscuit
+  ctx.fillStyle = th.choc; rr(-Wd / 2, -L, Wd, L * 0.72, 9); ctx.fill();        // chocolate
+  ctx.strokeStyle = 'rgba(0,0,0,.22)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = th.nut;
+  for (let i = 0; i < 9; i++) {
+    const y = -L + 12 + i * 14.5, x = (i % 2 ? 4 : -4);
+    ctx.beginPath(); ctx.arc(x, y, 2.2, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+}
+function draw(t) {
+  const th = theme;
+  ctx.fillStyle = th.bg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = th.dot;
+  for (let y = 0; y < H + 30; y += 30) for (let x = (y / 30 % 2) * 15; x < W + 30; x += 30) {
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.fill();
+  }
+  const TAU = Math.PI * 2;
+  const e = (1 - Math.cos(TAU * 2 * t)) / 2;               // 0..1, twice per loop
+  // title
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = th.ink; ctx.font = '44px Jua, sans-serif';
+  ctx.fillText(ttlEl.value || ' ', W / 2, 46, W - 40);
+  // photos
+  const wob = Math.sin(TAU * 2 * t) * 0.045, sc = 1 + 0.035 * e;
+  photo(0, 135, 190, -0.07 + wob, sc);
+  photo(1, 345, 190, 0.07 - wob, sc);
+  // sticks
+  const ang = (20 + 23 * Math.pow(e, 1.5)) * Math.PI / 180;
+  stick(110, 478, ang, false);
+  stick(370, 478, ang, true);
+  // floating hearts
+  for (let i = 0; i < 6; i++) {
+    const u = (t + i / 6) % 1, x = 70 + i * 68 + Math.sin(TAU * (u + i)) * 12, y = 440 - u * 340;
+    ctx.globalAlpha = Math.min(1, u * 5) * (1 - u) * 0.9;
+    heart(x, y, 0.8 + (i % 3) * 0.25, th.heart);
+  }
+  ctx.globalAlpha = 1;
+  // clink burst
+  const tipX = 240, tipY = 478 - 190 * Math.cos(43 * Math.PI / 180);
+  [0.25, 0.75].forEach(c => {
+    const u = ((t - c) % 1 + 1) % 1;
+    if (u < 0.3) {
+      const p = u / 0.3;
+      ctx.globalAlpha = 1 - p;
+      for (let k = 0; k < 7; k++) {
+        const a = -Math.PI * (0.1 + 0.8 * k / 6), r = 20 + p * 75;
+        heart(tipX + Math.cos(a) * r, tipY + Math.sin(a) * r, 0.7 + 0.5 * (1 - p), k % 2 ? th.heart : th.choc);
+      }
+      ctx.globalAlpha = 1;
+    }
+  });
+  // caption
+  ctx.fillStyle = th.ink; ctx.font = '30px Jua, sans-serif';
+  ctx.fillText(capEl.value || ' ', W / 2, 508, W - 40);
+  ctx.save(); ctx.globalAlpha = 0.22; ctx.fillStyle = '#fff'; ctx.font = '13px Jua, sans-serif';   // credit (faint white)
+  ctx.textAlign = 'right'; ctx.fillText(CREDIT, W - 12, H - 10); ctx.restore();
+}
+
+// white border + art, drawn into the same canvas for preview and export
+function frame(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.setTransform(SC, 0, 0, SC, BD * SC, BD * SC);
+  ctx.save(); rr(0, 0, W, H, 16); ctx.clip();
+  draw(t);
+  ctx.restore();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+// crop to a square and shrink in <=2x steps so the photo stays sharp (no aliasing)
+function prep(im) {
+  const m = Math.min(im.width, im.height), goal = Math.ceil(170 * SC * 1.1);
+  let s = im, sx = (im.width - m) / 2, sy = (im.height - m) / 2, cur = m;
+  do {
+    const n = cur > goal ? Math.max(goal, Math.ceil(cur / 2)) : cur;
+    const c = document.createElement('canvas'); c.width = c.height = n;
+    const x = c.getContext('2d'); x.imageSmoothingQuality = 'high';
+    x.drawImage(s, sx, sy, cur, cur, 0, 0, n, n);
+    s = c; sx = sy = 0; cur = n;
+  } while (cur > goal);
+  return s;
+}
+function setScale(k) {
+  SC = k; PW = (W + BD * 2) * k; PH = (H + BD * 2) * k;
+  cv.width = PW; cv.height = PH;
+  ctx.imageSmoothingQuality = 'high';
+  src.forEach((im, i) => { if (im) imgs[i] = prep(im); });
+}
+setScale(2);
+
+// preview loop
+const t0 = performance.now();
+let rendering = false;
+(function loop(now) {
+  if (!rendering) frame(((now - t0) / (FRAMES * DELAY * 10)) % 1);
+  requestAnimationFrame(loop);
+})(t0);
+if (document.fonts) document.fonts.load('30px Jua');
+
+// ---------- GIF encoder ----------
+function lzw(px, minCode) {
+  const clear = 1 << minCode, eoi = clear + 1;
+  let size = minCode + 1, next = eoi + 1, dict = new Map();
+  const out = []; let cur = 0, bits = 0;
+  const emit = c => { cur |= c << bits; bits += size; while (bits >= 8) { out.push(cur & 255); cur >>= 8; bits -= 8; } };
+  emit(clear);
+  let prefix = px[0];
+  for (let i = 1; i < px.length; i++) {
+    const k = px[i], key = prefix * 256 + k, hit = dict.get(key);
+    if (hit !== undefined) { prefix = hit; continue; }
+    emit(prefix);
+    if (next < 4096) {
+      dict.set(key, next++);
+      if (next > (1 << size) && size < 12) size++;
+    } else {
+      emit(clear); dict.clear(); size = minCode + 1; next = eoi + 1;
+    }
+    prefix = k;
+  }
+  emit(prefix); emit(eoi);
+  if (bits > 0) out.push(cur & 255);
+  return out;
+}
+// per-frame adaptive palette (median cut, exact bin means) + Floyd-Steinberg
+function quantize(data) {
+  const n = PW * PH, cnt = new Uint32Array(32768), sr = new Uint32Array(32768), sg = new Uint32Array(32768), sb = new Uint32Array(32768);
+  for (let q = 0; q < n * 4; q += 4) {
+    const r = data[q], g = data[q + 1], b = data[q + 2], k = (r >> 3) << 10 | (g >> 3) << 5 | (b >> 3);
+    cnt[k]++; sr[k] += r; sg[k] += g; sb[k] += b;
+  }
+  const bins = []; for (let k = 0; k < 32768; k++) if (cnt[k]) bins.push(k);
+  const ch = (k, c) => c === 0 ? k >> 10 : c === 1 ? (k >> 5) & 31 : k & 31;
+  const mk = bs => {
+    let bc = 0, br = -1, tot = 0;
+    for (let c = 0; c < 3; c++) {
+      let lo = 31, hi = 0; for (const k of bs) { const v = ch(k, c); if (v < lo) lo = v; if (v > hi) hi = v; }
+      if (hi - lo > br) { br = hi - lo; bc = c; }
+    }
+    for (const k of bs) tot += cnt[k];
+    return { bs, bc, tot, score: bs.length < 2 ? -1 : (br + 1) * Math.sqrt(tot) };
+  };
+  const boxes = [mk(bins)];
+  while (boxes.length < 256) {
+    let bi = -1, best = 0;
+    boxes.forEach((x, i) => { if (x.score > best) { best = x.score; bi = i; } });
+    if (bi < 0) break;
+    const { bs, bc, tot } = boxes[bi];
+    bs.sort((x, y) => ch(x, bc) - ch(y, bc));
+    let acc = 0, cut = 1;
+    for (let i = 0; i < bs.length; i++) { acc += cnt[bs[i]]; if (acc >= tot / 2) { cut = Math.min(Math.max(i + 1, 1), bs.length - 1); break; } }
+    boxes.splice(bi, 1, mk(bs.slice(0, cut)), mk(bs.slice(cut)));
+  }
+  const pal = new Uint8Array(768), count = boxes.length;
+  boxes.forEach((x, i) => {
+    let t = 0, r = 0, g = 0, b = 0;
+    for (const k of x.bs) { t += cnt[k]; r += sr[k]; g += sg[k]; b += sb[k]; }
+    pal[i * 3] = Math.round(r / t); pal[i * 3 + 1] = Math.round(g / t); pal[i * 3 + 2] = Math.round(b / t);
+  });
+  const idx = new Uint8Array(n), buf = new Float32Array(n * 3), cache = new Int16Array(262144).fill(-1), S = 0.6;
+  for (let p = 0; p < n; p++) { buf[p * 3] = data[p * 4]; buf[p * 3 + 1] = data[p * 4 + 1]; buf[p * 3 + 2] = data[p * 4 + 2]; }
+  const spread = (p, er, eg, eb, f) => { buf[p * 3] += er * f; buf[p * 3 + 1] += eg * f; buf[p * 3 + 2] += eb * f; };
+  for (let y = 0; y < PH; y++) for (let x = 0; x < PW; x++) {
+    const p = y * PW + x;
+    const r = Math.min(255, Math.max(0, buf[p * 3])), g = Math.min(255, Math.max(0, buf[p * 3 + 1])), b = Math.min(255, Math.max(0, buf[p * 3 + 2]));
+    const key = (r >> 2) << 12 | (g >> 2) << 6 | (b >> 2);
+    let c = cache[key];
+    if (c < 0) {
+      const kr = (r >> 2) * 4 + 2, kg = (g >> 2) * 4 + 2, kb = (b >> 2) * 4 + 2;
+      let bd = 1e9; c = 0;
+      for (let i = 0; i < count; i++) {
+        const dr = pal[i * 3] - kr, dg = pal[i * 3 + 1] - kg, db = pal[i * 3 + 2] - kb, dd = dr * dr * 3 + dg * dg * 4 + db * db * 2;
+        if (dd < bd) { bd = dd; c = i; }
+      }
+      cache[key] = c;
+    }
+    idx[p] = c;
+    const er = (r - pal[c * 3]) * S, eg = (g - pal[c * 3 + 1]) * S, eb = (b - pal[c * 3 + 2]) * S;
+    if (x + 1 < PW) spread(p + 1, er, eg, eb, 7 / 16);
+    if (y + 1 < PH) {
+      if (x > 0) spread(p + PW - 1, er, eg, eb, 3 / 16);
+      spread(p + PW, er, eg, eb, 5 / 16);
+      if (x + 1 < PW) spread(p + PW + 1, er, eg, eb, 1 / 16);
+    }
+  }
+  return { idx, pal };
+}
+function encodeGIF(frames) {
+  const parts = [], o = [];
+  const w16 = v => o.push(v & 255, v >> 8 & 255);
+  const flush = () => { parts.push(new Uint8Array(o)); o.length = 0; };
+  'GIF89a'.split('').forEach(c => o.push(c.charCodeAt(0)));
+  w16(PW); w16(PH); o.push(0x70, 0, 0);                       // no global table; every frame has its own
+  o.push(0x21, 0xFF, 11); 'NETSCAPE2.0'.split('').forEach(c => o.push(c.charCodeAt(0)));
+  o.push(3, 1, 0, 0, 0);
+  flush();
+  frames.forEach(({ idx, pal }) => {
+    o.push(0x21, 0xF9, 4, 0x04); w16(DELAY); o.push(0, 0);
+    o.push(0x2C); w16(0); w16(0); w16(PW); w16(PH); o.push(0x87);
+    for (let i = 0; i < 768; i++) o.push(pal[i]);
+    o.push(8);
+    const data = lzw(idx, 8);
+    for (let i = 0; i < data.length; i += 255) {
+      const chunk = data.slice(i, i + 255); o.push(chunk.length); for (const v of chunk) o.push(v);
+    }
+    o.push(0);
+    flush();
+  });
+  o.push(0x3B); flush();
+  return new Blob(parts, { type: 'image/gif' });
+}
+
+// ---------- make ----------
+const btn = document.getElementById('make'), st = document.getElementById('status'), res = document.getElementById('result');
+btn.onclick = async () => {
+  btn.disabled = true; rendering = true; res.innerHTML = '';
+  try {
+    const frames = [];
+    for (let i = 0; i < FRAMES; i++) {
+      frame(i / FRAMES);
+      frames.push(quantize(ctx.getImageData(0, 0, PW, PH).data));
+      st.textContent = `만드는 중… ${i + 1}/${FRAMES}`;
+      await new Promise(r => setTimeout(r));
+    }
+    st.textContent = '저장 준비 중…';
+    await new Promise(r => setTimeout(r));
+    const blob = encodeGIF(frames);
+    const url = await new Promise((ok, no) => {
+      const fr = new FileReader();
+      fr.onload = () => ok(fr.result); fr.onerror = no;
+      fr.readAsDataURL(blob);
+    });
+    st.textContent = `완성! (${(blob.size / 1048576).toFixed(1)}MB) 이미지를 길게 누르거나 저장 버튼을 눌러요.`;
+    res.innerHTML = `<img alt="완성된 움짤"><p><a download="pepero-pair.gif">GIF 저장하기</a></p>`;
+    const img = res.querySelector('img'), link = res.querySelector('a');
+    img.onerror = () => { st.textContent = '미리보기는 안 보여도 아래 저장 버튼으로 받으면 정상이에요.'; };
+    img.src = url; link.href = url;
+  } catch (err) {
+    st.textContent = '만들다가 오류가 났어요: ' + err.message;
+  } finally {
+    btn.disabled = false; rendering = false;
+  }
+};
+})();
+</script>
+</body>
+</html>
